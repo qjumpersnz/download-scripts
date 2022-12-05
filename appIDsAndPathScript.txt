@@ -1,0 +1,31 @@
+application cv 
+
+select * from organisations where accountingname like '%Bupa%';
+
+
+SELECT     '''' || app.id ||  '/' ||  doc.path ||  ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join documents doc on app.cvid = doc.id
+where e.organisationid = '27fedf88-7865-4a44-a25e-c68f89051cc5';
+
+
+
+SELECT     '''' || app.id || '/' || doc.path || ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join documents doc on app.coverletterid = doc.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+ 
+
+
+SELECT     ''''  app.id  ''  doc.path  ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join notes n on app.id = n.applicationid
+inner join documents doc on n.documentid = doc.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098' and n.documentid is not null;

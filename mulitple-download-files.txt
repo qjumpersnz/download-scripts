@@ -1,0 +1,82 @@
+import boto3
+import os
+from concurrent import futures
+
+#potato
+
+relative_path = './images'
+bucket_name = 'qjumpers-us-west-2-test2'
+application_candidate_lookup = ['5bee48d9-d3d8-47d0-9268-3ff930aa4cd2/def9c8cf-2ed6-41b9-a1e9-f42efae7c100',
+'311b2688-057e-480c-86e0-ddd05676fa7a/6133808c-844f-4dec-87a6-30bbb9d0bad0',
+'e65ab526-9555-44a3-b16b-12411ab87b7b/7c578a03-787c-4f69-afe7-24b70e65acbe',
+'d3c45b48-d2ce-4dbc-a4bd-6ae11d71af80/c3c55895-356d-4e82-a181-2b6c2a50575c',
+'35bf04c0-b114-422f-ae15-1777a0ed4dcb/8a4797b9-418f-4900-a8e8-802414bf4a52',
+'8a9d0b9f-aafe-40d9-aa47-f34dd3c85a3a/76736291-41a1-4aa3-8915-b55c132ab2e0',
+'3b4468bf-2b82-4b78-bb1c-5c3b683f52a5/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59',
+'273c84c3-0852-42b5-8380-6512d398abeb/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59',
+'fd72c480-9854-4566-9b98-88a59544e9d8/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59',
+'834f0d00-2e8d-4889-8b3c-08d51e5eff0b/07b48729-cd0b-4f16-9a60-0fcf0b5c1d6d',
+'d7bce894-6106-4c96-8098-41b2292ff2fb/f6952dae-8d3a-492e-beb3-f7d2dee65210',
+'093b4fdc-429e-4d0b-9aea-9090ee521f20/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59',
+'a0666424-6bfb-4158-a1ca-d2819af4e391/2b4fea0e-6efc-4a51-ba8d-803cde6f62f3',
+'5372e448-b12b-4cf1-afa4-29844f5a8af1/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59',
+'944d1d7c-a56e-4d68-baa4-6bff54739493/2b4fea0e-6efc-4a51-ba8d-803cde6f62f3',
+'2fd59d2d-fa1c-4bf9-a564-de3a79bc7f43/e4ef8290-5f61-446b-9a1f-88e5bbf6fd7c',
+'b3a9df28-16af-4a08-8ed5-a64009cb6eff/e4ef8290-5f61-446b-9a1f-88e5bbf6fd7c',
+'7801e81e-a130-4d4d-80aa-e8309d36c5ec/6f9f7d6c-fb96-48a4-b7e8-4452cb3751d1',
+'6b085a6b-de89-4255-962c-0ae135fb7f18/d72e0ef0-3070-4693-83f0-33857b306eed',
+'7f7d7a25-7319-47fd-820b-97a4b8c3317c/daebb503-5acd-40ed-b59c-14b044ea9700']
+
+s3_object_keys = ['applications/5bee48d9-d3d8-47d0-9268-3ff930aa4cd2/debbie-newman.docx',
+'applications/311b2688-057e-480c-86e0-ddd05676fa7a/claire-reynolds.docx',
+'applications/e65ab526-9555-44a3-b16b-12411ab87b7b/fay-axels.docx',
+'applications/d3c45b48-d2ce-4dbc-a4bd-6ae11d71af80/maxine-curry-sales-rep-cv.docx',
+'applications/35bf04c0-b114-422f-ae15-1777a0ed4dcb/richard-poole.docx',
+'applications/8a9d0b9f-aafe-40d9-aa47-f34dd3c85a3a/karen-brown-admin-cv.docx',
+'candidates/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59/applicant.docx',
+'candidates/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59/applicant.docx',
+'candidates/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59/applicant.docx',
+'applications/834f0d00-2e8d-4889-8b3c-08d51e5eff0b/claire-reynolds.docx',
+'applications/d7bce894-6106-4c96-8098-41b2292ff2fb/ben-harding-curriculum-vitae.docx',
+'candidates/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59/applicant.docx',
+'candidates/2b4fea0e-6efc-4a51-ba8d-803cde6f62f3/connor-beard-curriculum-vitae-large.pdf',
+'candidates/b7bff8d8-8aa0-4c3c-9895-e99ccc93af59/applicant.docx',
+'candidates/2b4fea0e-6efc-4a51-ba8d-803cde6f62f3/connor-beard-curriculum-vitae-large.pdf',
+'applications/2fd59d2d-fa1c-4bf9-a564-de3a79bc7f43/applicant.docx',
+'applications/b3a9df28-16af-4a08-8ed5-a64009cb6eff/sample-cv---james-brown.doc',
+'applications/7801e81e-a130-4d4d-80aa-e8309d36c5ec/blake-smith.docx',
+'applications/6b085a6b-de89-4255-962c-0ae135fb7f18/qjumpers-release-notes.docx',
+'applications/7f7d7a25-7319-47fd-820b-97a4b8c3317c/blake-smith.docx'] # List of S3 object keys
+max_workers = 5
+abs_path = os.path.abspath(relative_path)
+s3 = boto3.client('s3')
+
+def fetch(key):
+    key_without_file = key.rsplit('/', 1)
+    file = f'{abs_path}/{key}'
+    make_dir_file = f'{abs_path}/{key_without_file[0]}'
+    os.makedirs(make_dir_file, exist_ok=True)
+    with open(file, 'wb') as data:
+        s3.download_fileobj(bucket_name, key, data)
+    return file
+
+def fetch_all(keys):
+
+    with futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_key = {executor.submit(fetch, key): key for key in keys}
+
+        print("All URLs submitted.")
+
+        for future in futures.as_completed(future_to_key):
+
+            key = future_to_key[future]
+            exception = future.exception()
+
+            if not exception:
+                yield key, future.result()
+            else:
+                yield key, exception
+
+
+for key, result in fetch_all(s3_object_keys):
+    print(f'key: {key}  result: {result}')

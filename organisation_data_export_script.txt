@@ -1,0 +1,70 @@
+
+--drop table if still exist for temp data export of applications
+
+drop table "public"."temp_data_export_applications";
+
+select accountingname, * from organisations where accountingname like '%Delta%'
+
+-- create temp table to store applications for that client so that can be export to csv format replace organisationid with the correct
+
+SELECT
+	app.id,
+	app.cvid,
+	app.coverletterid,
+	app.firstname,
+	app.lastname,
+	app.email,
+	app.primarycontactnumber,
+	app.secondarycontactnumber,
+	a.streetaddress,
+	CASE WHEN a.placename = 'Default' THEN '' ELSE a.placename ENd as region,
+	CASE WHEN a.postalcode = 'Default' THEN '' ELSE a.postalcode END AS postalcode,
+	a.countrycode AS country
+	INTO TABLE
+	temp_data_export_applications
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join addresses a on app.addressid = a.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+
+-- drop temp table for questionniares if exist
+
+drop table temp_data_export_organisationquestionnaire;
+
+--add questionniare and id to table for csv export
+
+SELECT
+	distinct(q.id) AS questionnaireid,
+	q.model as questionnaire
+	INTO TABLE
+	temp_data_export_organisationquestionnaire
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+inner join publisheddetails pd on j.publisheddetailid = pd.id
+INNER JOIN employers e on j.employerid = e.id
+inner join questionnaires q on pd.screeningquestionnaireid = q.id OR pd.organisationquestionnaireid = q.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+-- drop table quetionnaire answers
+drop table  temp_data_export_organisationquestionnaireanswers;
+
+-- create temp table and insert data for answers csv
+
+SELECT
+    	app.id as applicationid,
+	q.id AS questionnaireid,
+	q.model as answer
+	INTO TABLE
+	temp_data_export_organisationquestionnaireanswers
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+inner join publisheddetails pd on j.publisheddetailid = pd.id
+INNER JOIN employers e on j.employerid = e.id
+inner join questionnaires q on pd.screeningquestionnaireid = q.id OR pd.organisationquestionnaireid = q.id
+inner join questionnaireanswers qa on app.screeningquestionnaireanswerid = qa.id OR app.organisationquestionnaireanswerid = qa.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+
+

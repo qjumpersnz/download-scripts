@@ -1,0 +1,548 @@
+import React, { Component } from "react";
+import PropTypes from "prop-types";
+import { connect } from "react-redux";
+import { push } from "react-router-redux";
+import { LinkContainer } from "react-router-bootstrap";
+import { Navbar, Nav, NavItem, NavDropdown, MenuItem, Button } from "react-bootstrap";
+import Helmet from "react-helmet";
+import config from "config";
+import { InfoBar } from "components";
+import { ErrorHandler, ToastHandler, ModalHandler } from "qjumpers-common-ui/lib/components";
+import { logout } from "redux/actions/auth";
+import { FormattedMessage, injectIntl } from "react-intl";
+import * as talentPoolActions from "redux/actions/talentpools";
+import * as talentPoolStateActions from "redux/actions/talentpoolstates";
+import * as intlAction from "qjumpers-common-ui/lib/redux/actions/intl";
+import * as notifActions from "qjumpers-common-ui/lib/redux/actions/notifs";
+import * as authActions from "redux/actions/auth";
+import * as userActions from "redux/actions/users";
+import * as jobActions from "redux/actions/jobs";
+import * as jobStateActions from "redux/actions/jobstates";
+import * as jobRequisitionStateActions from "redux/actions/jobrequisitionstates";
+import * as organistionActions from "redux/actions/organisations";
+import * as questionnaireActions from "redux/actions/questionnaires";
+import * as hierachyActions from "redux/actions/hierarchies";
+import * as noteActions from "redux/actions/notes";
+import * as interviewActions from "redux/actions/interviews";
+import * as declinationReasonsActions from "redux/actions/declinationreasons";
+import * as stateActions from "redux/actions/states";
+import * as providerActions from "redux/actions/providers";
+import * as jobRequisitionWorkflowActions from "redux/actions/jobrequisitionworkflows";
+import * as roleActions from "redux/actions/roles";
+import * as systemRoleActions from "redux/actions/systemroles";
+import * as documentConditions from "redux/actions/employementdocument";
+import DefaultMessages from "helpers/intl";
+import { isUrlAllowed, isCompanyActivated, isErrorPage, getCurrentCompanyId, getCurrentEmployeeAuthorisationId } from "utils/authHelper";
+import { Loading } from "qjumpers-common-ui/lib/components";
+import * as candidateApplicationStatesActions from "redux/actions/candidateapplicationstates";
+import * as externalProvidersActions from "redux/actions/providers";
+import * as emailtemplatesActions from "redux/actions/emailtemplates";
+import * as searchandmatchActions from "redux/actions/searchandmatch";
+import * as searchandmatchstatesActions from "redux/actions/searchandmatchstates";
+import * as applicationActions from "redux/actions/applications";
+
+@connect(
+  state => ({
+    auth: state.auth,
+    talentpools: state.talentpools.talentpools,
+    talentpoolstates: state.talentpoolstates.states,
+    candidateapplicationstates: state.candidateapplicationstates.states,
+    searchandmatchstates: state.searchandmatchstates.states
+    //errorObject: state.notifs.errors
+  }),
+  {
+    ...authActions,
+    ...userActions,
+    ...jobActions,
+    ...documentConditions,
+    ...jobStateActions,
+    ...jobRequisitionStateActions,
+    ...organistionActions,
+    ...questionnaireActions,
+    ...hierachyActions,
+    ...noteActions,
+    ...interviewActions,
+    ...intlAction,
+    ...talentPoolActions,
+    ...talentPoolStateActions,
+    ...declinationReasonsActions,
+    ...stateActions,
+    ...providerActions,
+    ...jobRequisitionWorkflowActions,
+    ...roleActions,
+    ...systemRoleActions,
+    ...notifActions,
+    ...candidateApplicationStatesActions,
+    ...externalProvidersActions,
+    ...emailtemplatesActions,
+    ...searchandmatchActions,
+    ...searchandmatchstatesActions,
+    logout,
+    pushState: push,
+    ...applicationActions
+  }
+)
+class App extends Component {
+  static propTypes = {
+    children: PropTypes.object.isRequired,
+    pushState: PropTypes.func.isRequired
+  };
+
+  static contextTypes = {
+    store: PropTypes.object.isRequired,
+    router: PropTypes.object
+  };
+
+  constructor(props) {
+    super(props);
+
+    this.state = { loading: true, expanded: false };
+
+    this.loadCompanyData = this.loadCompanyData.bind(this);
+    this.switchCompany = this.switchCompany.bind(this);
+    this.toggle = this.toggle.bind(this);
+    this.close = this.close.bind(this);
+
+    const { getCompanyDetails, handleEmployeeFirstLogin, loadCurrentOrganisation } = this.props;
+
+    this.loadIntl().then(() =>
+      getCompanyDetails(window.keycloak.subject)
+        .then(companies => {
+          const company = this.getCurrentCompanyFrom(companies);
+          if (company) {
+            handleEmployeeFirstLogin().then(() => {
+              loadCurrentOrganisation()
+                .then(() => {
+                  if (!isCompanyActivated()) {
+                    throw "organisation not activated";
+                  }
+                  Promise.all([this.loadReferenceData(), this.loadCompanyData(company)])
+                    .then(() => {
+                      this.setState({ loading: false });
+                    })
+                    .catch(e => {
+                      this.context.router.push({
+                        pathname: "/500"
+                      });
+                      this.setState({ loading: false });
+                    });
+                })
+                .catch(e => {
+                  this.handleNotActivatedOrganisation();
+                });
+            });
+          } else {
+            // this.handleServerError("Failed to load application");
+            this.handleNoOrganisation();
+          }
+        })
+        .catch(() => this.handleServerError("Failed to load application"))
+    );
+  }
+
+  handleServerError(message) {
+    this.context.router.push({
+      pathname: "/500"
+    });
+    this.setState({ loading: false });
+  }
+
+  handleNotActivatedOrganisation() {
+    if (this.props.location.pathname !== "/not-activated-organisation") {
+      this.context.router.push({
+        pathname: "/not-activated-organisation"
+      });
+    }
+    this.setState({ loading: false });
+  }
+
+  handleNoOrganisation() {
+    if (this.props.location.pathname !== "/no-organisation") {
+      this.context.router.push({
+        pathname: "/no-organisation"
+      });
+    }
+    this.setState({ loading: false });
+  }
+
+  toggle() {
+    this.setState({ expanded: !this.state.expanded });
+  }
+  close() {
+    this.setState({ expanded: false });
+  }
+
+  getCurrentCompanyFrom(availableCompanies) {
+    const { setCompanyDetails } = this.props;
+    if (availableCompanies && availableCompanies.length > 0) {
+      let currentCompany = availableCompanies[0];
+      if (typeof Storage !== "undefined") {
+        const key = "currentCompanyId_" + window.keycloak.subject;
+        const currentCompanyId = localStorage.getItem(key);
+        const storedCompany = availableCompanies.find(o => o.id === currentCompanyId);
+        if (storedCompany) {
+          currentCompany = storedCompany;
+        }
+      }
+
+      setCompanyDetails(currentCompany);
+      return currentCompany;
+    }
+  }
+
+  loadIntl() {
+    const { setIntl } = this.props;
+    return Promise.all([
+      new Promise((resolve, reject) => {
+        const messages = DefaultMessages();
+        setIntl(messages);
+        resolve(true);
+      })
+    ]);
+  }
+
+  loadReferenceData() {
+    return Promise.all([this.loadGlobalReferenceData(), this.loadJobTypeDefinitions()]);
+  }
+
+  loadGlobalReferenceData() {
+    const {
+      loadNoteTypes,
+      loadTimezones,
+      // loadIntl,
+      loadCompensationTemplateTypes,
+      loadAllExternalProviders,
+      loadTokens
+    } = this.props;
+    return Promise.all([
+      // loadIntl(),
+      loadNoteTypes(),
+      loadTimezones(),
+      loadCompensationTemplateTypes(),
+      loadAllExternalProviders(),
+      loadTokens()
+    ]);
+  }
+
+  loadJobTypeDefinitions() {
+    const { loadIndustries, loadJobTypes, loadEducationLevels, loadPaymentTypes, loadJobStatuses, loadOccupations, getJRWorkflows, loadDocumentConditions } = this.props;
+    return Promise.all([loadIndustries(), loadJobTypes(), loadEducationLevels(), loadPaymentTypes(), loadJobStatuses(), loadOccupations(), getJRWorkflows(), loadDocumentConditions()]);
+  }
+
+  loadCompanyData(company) {
+    const {
+      getEmployeeAuthorisation,
+      getCurrentUser,
+      loadHierarchies,
+      loadUsers,
+      loadTalentPools,
+      loadCompensationTemplates,
+      loadDeclinationReasons,
+      loadQuestionnaireCategories,
+      loadQuestionnaireSummaries,
+      loadProviders,
+      loadRoles,
+      loadSystemRoles
+    } = this.props;
+
+    return getEmployeeAuthorisation(company.id).then(() => {
+      getCurrentUser().then(() => {
+        Promise.all([
+          loadHierarchies(),
+          loadUsers(),
+          this.loadGenerateDocumentsRights(),
+          this.loadJobStates(),
+          this.loadJobRequisitionStates(),
+          this.loadApplicationStates(),
+          this.loadTalentPoolStates(),
+          this.loadCandidateApplicationStates(),
+          this.loadSearchAndMatchStates(),
+          loadTalentPools(),
+          loadCompensationTemplates(),
+          loadDeclinationReasons(),
+          loadQuestionnaireCategories(),
+          loadQuestionnaireSummaries(),
+          loadProviders(),
+          loadRoles(),
+          loadSystemRoles()
+        ]);
+      });
+    });
+  }
+
+  loadGenerateDocumentsRights() {
+    const { getGenerateDocument } = this.props;
+    const organisationId = getCurrentCompanyId();
+    let employeeId = getCurrentEmployeeAuthorisationId();
+    getGenerateDocument(organisationId, employeeId).then(result => {
+      if (result) {
+        localStorage.setItem("generateEmploymentDocuments", result.generateEmployeeDocuments);
+      }
+    });
+  }
+  loadJobStates() {
+    const { loadJobProcesses, loadJobPresentation } = this.props;
+    return loadJobProcesses().then(process => {
+      return Promise.all(
+        process.definition.states.map(state => {
+          loadJobPresentation(state.name);
+        })
+      );
+    });
+  }
+
+  loadJobRequisitionStates() {
+    const { loadJobRequisitionProcesses, loadJobRequisitionPresentation } = this.props;
+    return loadJobRequisitionProcesses().then(process => {
+      if (process) {
+        return Promise.all(
+          process.definition.states.map(state => {
+            loadJobRequisitionPresentation(state.name);
+          })
+        );
+      } else {
+        return null;
+      }
+    });
+  }
+
+  loadApplicationStates() {
+    const { loadStates } = this.props;
+    return loadStates(null);
+  }
+
+  loadTalentPoolStates() {
+    const { talentpoolstates, loadTalentPoolPresentation } = this.props;
+    return Promise.all(
+      talentpoolstates
+        .filter(s => s.parentStateName === null)
+        .map(state => {
+          loadTalentPoolPresentation(state.name);
+        })
+    );
+  }
+
+  loadCandidateApplicationStates() {
+    const { candidateapplicationstates, loadCandidateApplicationsPresentation } = this.props;
+    return Promise.all(
+      candidateapplicationstates
+        .filter(s => s.parentStateName === null)
+        .map(state => {
+          loadCandidateApplicationsPresentation(state.name);
+        })
+    );
+  }
+
+  loadSearchAndMatchStates() {
+    const { searchandmatchstates, loadSearchAndMatchPresentation } = this.props;
+    return Promise.all(
+      searchandmatchstates
+        .filter(s => s.parentStateName === null)
+        .map(state => {
+          loadSearchAndMatchPresentation(state.name);
+        })
+    );
+  }
+
+  handleLogout = () => {
+    window.keycloak.logout({ redirectUri: window.location.origin });
+  };
+
+  handleViewTalentPool = talentpool => {
+    this.context.router.push("/talentpool/" + talentpool.id + "/list");
+  };
+
+  isActive(name) {
+    const elems = this.props.location.pathname.split("/").filter(String);
+    return elems.length > 0 && elems[0] === name;
+  }
+
+  switchCompany(details) {
+    const { setCompanyDetails } = this.props;
+    this.setState({ loading: true }, () => {
+      setCompanyDetails(details);
+      window.location.replace("/");
+    });
+  }
+
+  render() {
+    let displayError = false;
+    let newElement = [];
+
+    if (Array.isArray(this.props.errorObject) && this.props.errorObject.length > 0) {
+      newElement.push(this.props.errorObject.slice(-1)[0]);
+      if (newElement[0].message === "Invalid Api Key or Subdomain value") {
+        displayError = true;
+      }
+    }
+
+    const { talentpools, location } = this.props;
+    const { loading, expanded } = this.state;
+    const styles = require("./App.scss");
+    const FooterLogo = require("assets/images/logo.png");
+    const url = window.location.hostname;
+    const nzsite = 'https://www.qjumpers.co.nz';
+
+    if (!loading) {
+      this.props.getCurrentUser().then(user => {
+        if (window.LogRocket) {
+          window.LogRocket.identify(user.employeeId, {
+            name: user.firstName + " " + user.lastName,
+            email: user.email,
+            // Add your own custom user variables here, ie:
+            site: window.location.host
+          });
+        }
+      });
+    }
+
+    return (
+      <div>
+        {isErrorPage(location.pathname) ? (
+          <div className={styles.app + " " + styles.appError}>
+            <div className={styles.appPage}>
+              <div className="container">{this.props.children}</div>
+            </div>
+            <footer className={styles.appFooter + " container"}>
+              <a href={config.app.website} target="_blank" className={styles.appFooterLogo}>
+                <img src={FooterLogo} alt={config.app.title} />
+              </a>
+            </footer>
+          </div>
+        ) : loading || !isUrlAllowed(location.pathname, true) ? (
+          <div className={styles.appLoader}>
+            <Loading className="loading-component" />
+          </div>
+        ) : (
+          <div className={styles.app}>
+            <Helmet {...config.app.head} />
+            <ToastHandler />
+            {displayError === false ? <ErrorHandler /> : null}
+            <ModalHandler />
+            <header className={styles.appHeader}>
+              <div className="rightcontainer">
+                <div className="hdr-right"> </div>
+              </div>
+              <div className="gradient" />
+              <div className="leftcontiainer">
+                <div className="hdr-left-1"> </div>
+                <div className="hdr-left-2"> </div>
+              </div>
+              <Navbar inverse onToggle={this.toggle} expanded={expanded} collapseOnSelect>
+                <Navbar.Header>
+                  <Navbar.Toggle />
+                </Navbar.Header>
+                <Navbar.Collapse>
+                  {isCompanyActivated() ? (
+                    <Nav navbar>
+                      {!isUrlAllowed("jobrequisition") ? (
+                        <LinkContainer to="/jobs/list">
+                          <NavItem onClick={this.close} className={this.isActive("jobs") ? "active" : ""}>
+                            <span>
+                              <FormattedMessage id="jobs.Title" />
+                            </span>
+                          </NavItem>
+                        </LinkContainer>
+                      ) : (
+                        <NavDropdown title={<FormattedMessage id="jobs.Title" />} id="basic-nav-dropdown" className={this.isActive("jobs") || this.isActive("jobrequisitions") ? "active" : ""}>
+                          <MenuItem
+                            className={this.isActive("jobrequisition") ? "active" : ""}
+                            onClick={() => {
+                              this.close();
+                              this.context.router.push("/jobrequisition/list");
+                            }}>
+                            <FormattedMessage id="jobrequisitions.Title" />
+                          </MenuItem>
+                          <MenuItem
+                            className={this.isActive("jobs") ? "active" : ""}
+                            onClick={() => {
+                              this.close();
+                              this.context.router.push("/jobs/list");
+                            }}>
+                            <FormattedMessage id="jobadverts.Title" />
+                          </MenuItem>
+                        </NavDropdown>
+                      )}
+                      {talentpools && talentpools.length > 0 && isUrlAllowed("talentpool") ? (
+                        <LinkContainer to={"/talentpool/" + talentpools[0].id + "/list"}>
+                          <NavItem onClick={this.close} className={this.isActive("talentpool") ? "active" : ""}>
+                            <FormattedMessage id="TalentPools.NavTitle" />
+                          </NavItem>
+                        </LinkContainer>
+                      ) : null}
+                      {/*: talentpools && talentpools.length > 0
+                                ? <NavDropdown title="Talent Pool" id="basic-nav-dropdown" className={this.isActive("talentpool") ? "active" : ""}>
+                                    {talentpools.map((talentpool, i) => (
+                                      <MenuItem
+                                        key={i}
+                                        className={this.props.params.id == talentpool.id ? "active" : ""}
+                                        key={talentpool.id}
+                                        onClick={() => {
+                                          this.close();
+                                          this.handleViewTalentPool(talentpool);
+                                        }}>
+                                        {talentpool.name}
+                                      </MenuItem>
+                                    ))}
+                                  </NavDropdown>*/}
+                      {isUrlAllowed("reports") ? (
+                        <LinkContainer to="/reports">
+                          <NavItem onClick={this.close} className={this.isActive("reports") || this.isActive("report") ? "active" : ""}>
+                            <span>
+                              <FormattedMessage id="Noun.Reports" />
+                            </span>
+                          </NavItem>
+                        </LinkContainer>
+                      ) : null}
+                      {isUrlAllowed("admin") ? (
+                        <LinkContainer to="/admin">
+                          <NavItem onClick={this.close} className={this.isActive("admin") ? "active" : ""}>
+                            <span>
+                              <FormattedMessage id="Noun.Admin" />
+                            </span>
+                          </NavItem>
+                        </LinkContainer>
+                      ) : null}
+                    </Nav>
+                  ) : null}
+                  <div className={"visible-xs " + styles.userAction}>
+                    <Button
+                      bsStyle="danger"
+                      type="button"
+                      onClick={() => {
+                        this.close();
+                        this.handleLogout();
+                      }}>
+                      <FormattedMessage id="Action.Logout" />
+                    </Button>
+                    {isCompanyActivated() ? (
+                      <Button
+                        bsStyle="danger"
+                        type="button"
+                        onClick={() => {
+                          this.close();
+                        }}>
+                        <FormattedMessage id="Action.Profile" />
+                      </Button>
+                    ) : null}
+                  </div>
+                </Navbar.Collapse>
+              </Navbar>
+            </header>
+            <div className={styles.appPage}>
+              <InfoBar switchCompany={this.switchCompany} />
+              <div className={styles.appContent + " container"}>{this.props.children}</div>
+            </div>
+            <footer className={styles.appFooter + " container"}>
+              <a href={url === 'employer.qjumpers.co' ? nzsite : config.app.website} target="_blank" className={styles.appFooterLogo}>
+                <img src={FooterLogo} alt={config.app.title} />
+              </a>
+            </footer>
+          </div>
+        )}
+      </div>
+    );
+  }
+}
+
+export default injectIntl(App);

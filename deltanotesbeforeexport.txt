@@ -1,0 +1,119 @@
+#Generating CSVs:
+
+Note: When exporting data to CV using DBeaver, export to CSV and select the 'Format Numbers' checkbox so that phone numbers are properly formatted
+
+1. Generate CSV of applicant data.
+	- Create temporary table (delete if previous temp table exits) temp_data_export_applications
+	- Use query:
+	SELECT
+	app.id,
+	app.cvid,
+	app.coverletterid,
+	app.firstname,
+	app.lastname,
+	app.email,
+	app.primarycontactnumber,
+	app.secondarycontactnumber,
+	a.streetaddress,
+	CASE WHEN a.placename = 'Default' THEN '' ELSE a.placename ENd as region,
+	CASE WHEN a.postalcode = 'Default' THEN '' ELSE a.postalcode END AS postalcode,
+	a.countrycode AS country
+	INTO TABLE
+	temp_data_export_applications
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join addresses a on app.addressid = a.id
+where e.organisationid = 'ORGID';
+	- Export the results to the query: "SELECT * from temp_data_export_applications
+
+2. Generate CSV of organisation questionniaries of they exist
+	- Create temporary table (delete if previous temp table exits) temp_data_export_organisationquestionnaire;
+	- Use query:
+SELECT
+	distinct(q.id) AS questionnaireid,
+	q.model as questionnaire
+	INTO TABLE
+	temp_data_export_organisationquestionnaire
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+inner join publisheddetails pd on j.publisheddetailid = pd.id
+INNER JOIN employers e on j.employerid = e.id
+inner join questionnaires q on pd.screeningquestionnaireid = q.id OR pd.organisationquestionnaireid = q.id
+where e.organisationid = 'ORGID';
+	- Export the results to the query: "SELECT * from temp_data_export_organisationquestionnaire"
+
+3. Generate CSV of organisation questionniarie answers
+	- Create temporary table (delete if previous temp table exits) temp_data_export_organisationquestionnaireanswers;
+	- Use query:
+
+SELECT
+    	app.id as applicationid,
+	q.id AS questionnaireid,
+	q.model as answer
+	INTO TABLE
+	temp_data_export_organisationquestionnaireanswers
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+inner join publisheddetails pd on j.publisheddetailid = pd.id
+INNER JOIN employers e on j.employerid = e.id
+inner join questionnaires q on pd.screeningquestionnaireid = q.id OR pd.organisationquestionnaireid = q.id
+inner join questionnaireanswers qa on app.screeningquestionnaireanswerid = qa.id OR app.organisationquestionnaireanswerid = qa.id
+where e.organisationid = 'ORGID';
+	- Export the results to the query: "SELECT * from temp_data_export_organisationquestionnaireanswers"
+
+
+Downloading applicant files from AWS:
+
+Note: Applicant files will be downloaded for: CV's, Coverletters and documents in notes (not all clients have this)
+
+1. Firstly make sure you have the AWS CLI set up, and the connection to the s3 bucket configured and authenticated.
+
+2. For downloading from the s3 bucket, we need the filepaths for all applicant files. These can be generated using a query on the ANZ-prod db, and then these
+results are exported to a text file. This process is done for CV's first, then Coverletters and then documents in notes.
+	- Query for CV file paths
+SELECT     '''' || app.id || '/' || doc.path || ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join documents doc on app.cvid = doc.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+	- Query for Coverletter file paths
+SELECT     '''' || app.id || '/' || doc.path || ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join documents doc on app.coverletterid = doc.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098';
+
+	- Query for documents in notes filepaths (Could be none):
+SELECT     '''' || app.id || '/' || doc.path || ''','
+FROM applications app
+inner join jobs j ON  app.jobid = j.id
+INNER JOIN employers e on j.employerid = e.id
+inner join notes n on app.id = n.applicationid
+inner join documents doc on n.documentid = doc.id
+where e.organisationid = '3d82c65e-210b-4094-8000-930281dfe098' and n.documentid is not null;
+
+3. Export these filepaths to a text file (from DBeaver or DB manager). Settings when exporting the data: CSV, delimiter ',' Header: none, Quote: Never
+
+	
+4. Open the s3bucketdownload.py file, change the relative path to './CV' and place the contents of the csv for the CV's in the s3_object_keys list. 
+ 
+5. Run the python script using the command prompt, 'python s3bucketdownload.py', the applicants CV files should appear in a CV folder. 
+Note that some of the filepaths may have apostrophes in their names, these should be turned into double apostrophes otherwise an error will occur
+
+6. Repeat steps 3-5 for Coverletters and Documents in notes. When doing the data export for documents in notes, change the index of path_keys[i] where the comments say is appropriate.
+
+7. Check the number of files matches the number of rows from the CSV file
+
+8. Zip up contents and sent to the clients contact person at QJumpers. 
+
+Add Zelia Horrell - Digital Marketing
+Add Kye Oldham - Developer
+Add Kathryn Stewart- HR Consultant
+Change Kulwinder's title to Lead Developer
+Delete Emma, Gretchen, Andrew, Owen and Christine
+Change the Title from"Our Team" to "Some of Our Team"
+Change words from "Based in Plano, Texas, we provide cloud based software" to "Based in Plano, Texas and Tauranga, New Zealand, we provide....."
